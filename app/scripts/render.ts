@@ -108,7 +108,14 @@ async function video(page: Page, from: number, to: number, fps: number, out: str
   const audio = path.join(ROOT, 'audio/pdoom.mp3');
   const args = ['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${OW}x${OH}`, '-r', String(fps), '-i', 'pipe:0'];
   if (!flag('noaudio')) args.push('-ss', String(from), '-t', String(to - from), '-i', audio);
-  args.push('-vf', 'vflip', '-c:v', 'libx264', '-preset', opt('preset', 'slow')!, '-crf', crf, '-pix_fmt', 'yuv420p', '-tune', 'grain', '-x264-params', opt('x264', 'aq-mode=3')!);
+  if (flag('apple') || opt('codec') === 'videotoolbox' || opt('codec') === 'hevc' || opt('codec') === 'h264_videotoolbox') {
+    const codec = flag('h264') || opt('codec') === 'h264_videotoolbox' ? 'h264_videotoolbox' : 'hevc_videotoolbox';
+    const b = opt('b', opt('bitrate', '150M'))!;
+    args.push('-vf', 'vflip', '-c:v', codec, '-b:v', b, '-pix_fmt', 'yuv420p');
+    if (codec === 'hevc_videotoolbox') args.push('-tag:v', 'hvc1');
+  } else {
+    args.push('-vf', 'vflip', '-c:v', opt('codec', 'libx264')!, '-preset', opt('preset', 'slow')!, '-crf', crf, '-pix_fmt', 'yuv420p', '-tune', 'grain', '-x264-params', opt('x264', 'aq-mode=3')!);
+  }
   if (!flag('noaudio')) args.push('-c:a', 'aac', '-b:a', '320k', '-shortest');
   args.push('-movflags', '+faststart', out);
   const ff = Bun.spawn(args, { stdin: 'pipe', stdout: 'inherit', stderr: 'inherit' });
