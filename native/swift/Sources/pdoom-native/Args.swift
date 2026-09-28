@@ -4,7 +4,7 @@ import Foundation
 
 struct Args {
   let positional: [String]
-  private let raw: [String]
+  let raw: [String]
 
   init(_ argv: [String]) {
     raw = argv
