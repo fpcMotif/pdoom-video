@@ -46,6 +46,7 @@ Shared shaders on `native-base`: engine (`common`, `post`, `engine`, `diagnostic
 
 ## Conventions every port follows
 
+- **Target machine**: this Mac only: Apple M4 Pro (16-core GPU, Metal GPU family apple9 with Metal 4; 8 performance + 4 efficiency CPU cores; 24 GB unified memory, of which Metal recommends at most 17 GB as its working set), macOS 27.2. The ports use the newest APIs available here, carry no fallbacks for other chips or OS versions, and tune threads, in-flight frames and pool sizes to this machine. Budget: at most 6 GB peak memory for a 4K export with motion blur (the Chrome path uses about 9.5 GB per pipeline).
 - **Orientation**: textures keep WebGL's row order (row 0 = image bottom), so `position.y`/`gid.y` equal WebGL's `gl_FragCoord.y − 0.5` and hashes of pixel coordinates match. Vertex shaders negate clip-space y. Only the final pass (`post_final` with `flipRows = 1`) or the diagnostic pattern writes top-down rows for the encoder.
 - **Depth**: three.js projection matrices produce WebGL clip z in [−w, w]; Metal wants [0, w]: use z' = (z + w) / 2.
 - **Precision**: render targets are RGBA16Float like three.js `HalfFloatType`; the motion-blur sums are RGBA32Float; the averaged frame is stored as RGBA16Float before post, as `avgRT` is.
