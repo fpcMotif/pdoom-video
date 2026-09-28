@@ -52,6 +52,8 @@ public enum F {
   }
 }
 
+let coreTextLock = NSLock()
+
 public final class FontRegistry: @unchecked Sendable {
   private var cgFonts: [String: CGFont] = [:]
   private var ctFontCache: [String: CTFont] = [:] // "family@size"
@@ -69,7 +71,9 @@ public final class FontRegistry: @unchecked Sendable {
 
   public func ctFont(_ family: String, _ size: Double) throws -> CTFont {
     let key = "\(family)@\(size)"
-    if let f = ctFontCache[key] { return f }
+    coreTextLock.lock()
+    defer { coreTextLock.unlock() }
+    if let cached = ctFontCache[key] { return cached }
     guard let cg = cgFonts[family] else { throw FontError.load("font not loaded: \(family)") }
     let f = CTFontCreateWithGraphicsFont(cg, CGFloat(size), nil, nil)
     ctFontCache[key] = f

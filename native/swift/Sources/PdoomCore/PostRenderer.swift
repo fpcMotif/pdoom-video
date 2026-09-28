@@ -73,6 +73,11 @@ public final class PostRenderer {
   /// `flipRows`: true writes row PH-1-y (top-down, for an encoder or a PNG); false keeps WebGL's order.
   public func render(commandQueue: MTLCommandQueue, src: MTLTexture, hud: MTLTexture, out: MTLTexture,
                       params: PostParams, time: Double, flipRows: Bool) throws {
+    try Profiler.shared.time("gpu_post") { try renderUntimed(commandQueue: commandQueue, src: src, hud: hud, out: out, params: params, time: time, flipRows: flipRows) }
+  }
+
+  private func renderUntimed(commandQueue: MTLCommandQueue, src: MTLTexture, hud: MTLTexture, out: MTLTexture,
+                      params: PostParams, time: Double, flipRows: Bool) throws {
     guard let cmd = commandQueue.makeCommandBuffer(), let enc = cmd.makeComputeCommandEncoder() else {
       throw EncoderError.failed("could not make Metal command buffer/encoder")
     }

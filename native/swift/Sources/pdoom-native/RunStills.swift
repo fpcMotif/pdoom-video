@@ -22,6 +22,7 @@ func runStills(args: Args, root: URL) async throws {
   try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
   let engine = try Engine(root: root, scale: scale, only: only)
+  engine.threads = args.int("threads", 8)
   let w = 1920 * scale, h = 1080 * scale
   let desc = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm, width: w, height: h, mipmapped: false)
   desc.usage = [.shaderWrite, .shaderRead]
@@ -41,6 +42,7 @@ func runStills(args: Args, root: URL) async throws {
     try writePNG(rgba: rgba, width: w, height: h, to: out)
     print(out.path)
   }
+  Profiler.shared.report()
 }
 
 private func padStart(_ s: String, _ len: Int) -> String {

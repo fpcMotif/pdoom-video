@@ -45,13 +45,17 @@ public final class X264Writer {
   public func writeFrame(_ frame: Int, render: FrameRenderer, texture: MTLTexture, commandQueue: MTLCommandQueue) throws {
     try render(texture, frame, commandQueue)
     let bytesPerRow = width * 4
-    scratch.withUnsafeMutableBytes { buf in
-      texture.getBytes(buf.baseAddress!, bytesPerRow: bytesPerRow, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+    Profiler.shared.time("texture_readback") {
+      scratch.withUnsafeMutableBytes { buf in
+        texture.getBytes(buf.baseAddress!, bytesPerRow: bytesPerRow, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+      }
     }
     // the throwing overload (write(contentsOf:)) reports a dead pipe as a Swift error; the legacy
     // write(_:) raises an uncatchable NSException instead, which would crash past our cleanup path
-    try scratch.withUnsafeBytes { buf in
-      try stdin.write(contentsOf: Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: buf.baseAddress!), count: buf.count, deallocator: .none))
+    try Profiler.shared.time("encoder_wait") {
+      try scratch.withUnsafeBytes { buf in
+        try stdin.write(contentsOf: Data(bytesNoCopy: UnsafeMutableRawPointer(mutating: buf.baseAddress!), count: buf.count, deallocator: .none))
+      }
     }
   }
 

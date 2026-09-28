@@ -19,6 +19,7 @@ func runVideo(args: Args, root: URL) async throws {
   let noAudio = args.flag("noaudio")
 
   let engine = try Engine(root: root, scale: scale, only: only)
+  engine.threads = args.int("threads", 8)
   let from = args.double("from", 0)
   let to = args.opt("to").flatMap(Double.init) ?? engine.audio.duration
   let w = 1920 * scale, h = 1080 * scale
@@ -65,4 +66,5 @@ func runVideo(args: Args, root: URL) async throws {
     throw EncoderError.failed("--encoder must be hevc or x264")
   }
   print("wrote \(out.path) (\(totalFrames) frames, \(w)x\(h) @ \(fps)fps, \(encoderName))")
+  Profiler.shared.report()
 }

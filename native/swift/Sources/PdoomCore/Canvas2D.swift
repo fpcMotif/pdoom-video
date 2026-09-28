@@ -156,6 +156,8 @@ public final class Canvas2D {
       // context is y-flipped to canvas (y-down) semantics, so the glyph transform must flip it back
       // (d: -1) as well as translate it, or every glyph renders upside down.
       var t = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: CGFloat(originX + g.x), ty: CGFloat(y))
+      coreTextLock.lock()
+      defer { coreTextLock.unlock() }
       guard let glyphPath = CTFontCreatePathForGlyph(font, g.glyphId, &t) else { continue }
       ctx.addPath(glyphPath)
       if stroke { ctx.strokePath() } else { ctx.fillPath() }
@@ -184,5 +186,10 @@ public final class Canvas2D {
       }
     }
     return out
+  }
+
+  public func rawPremultipliedRGBA() -> (pointer: UnsafeRawPointer, bytesPerRow: Int, width: Int, height: Int)? {
+    guard let data = ctx.data else { return nil }
+    return (UnsafeRawPointer(data), ctx.bytesPerRow, ctx.width, ctx.height)
   }
 }

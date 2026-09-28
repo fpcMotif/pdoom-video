@@ -114,10 +114,15 @@ public final class HookScene: Scene {
   }
 
   // ------------------------------------------------------------------ render
-  public func render(_ frame: Frame, into out: MTLTexture, commandQueue: MTLCommandQueue) throws -> PostOverrides {
+  public struct Prep: Sendable {
+    public var bgR, bgG, bgB, echo, hot, gain: Double
+    public var overrides: PostOverrides
+    public var raw: (pointer: Data, bytesPerRow: Int, width: Int, height: Int)
+  }
+
+  public func prepare(_ frame: Frame, scratch c: Canvas2D) throws -> Prep {
     let t = frame.t
-    layer.clear()
-    let c = layer
+    c.clear()
     let wi = wordIdx(t)
     var o = PostOverrides()
     o.bloomThreshold = 1.0; o.bloomKnee = 0.2; o.bloom = 0.6; o.bloomRadius = 0.55
@@ -138,22 +143,24 @@ public final class HookScene: Scene {
 
     var shake = 0.0
     let inNum = t >= tNum
-    if n == 4 && t < ws[0] { try drawAskew(c, t) }
-    if n == 3 && wi >= 0 { try drawGhost(c, t) }
-    if !inNum {
-      if wi < 0 { try drawPre(c, t, inkK) }
-      else if n == 3 { try drawTiny(c, t, wi) }
-      else if wi == 0 { try drawIM(c, t, inkK) }
-      else if wi == 1 { try drawUP(c, t, inkK) }
-      else if wi == 2 { try drawMY(c, t, inkK) }
-      else { try drawPDFull(c, t, inkK) }
-      if wi >= 0 && n != 3 {
-        let arr = [0.0, 7, 13, 0, 20]; shake = arr[n] * pulse(t, retrig(t, ws[wi]), 0.05)
+    try Profiler.shared.time("cpu_raster") {
+      if n == 4 && t < ws[0] { try drawAskew(c, t) }
+      if n == 3 && wi >= 0 { try drawGhost(c, t) }
+      if !inNum {
+        if wi < 0 { try drawPre(c, t, inkK) }
+        else if n == 3 { try drawTiny(c, t, wi) }
+        else if wi == 0 { try drawIM(c, t, inkK) }
+        else if wi == 1 { try drawUP(c, t, inkK) }
+        else if wi == 2 { try drawMY(c, t, inkK) }
+        else { try drawPDFull(c, t, inkK) }
+        if wi >= 0 && n != 3 {
+          let arr = [0.0, 7, 13, 0, 20]; shake = arr[n] * pulse(t, retrig(t, ws[wi]), 0.05)
+        }
+        if n != 3 { try drawAnnotations(c, t, wi, inkK) }
+      } else {
+        if n == 3 { try drawTiny(c, t, 3, 1 - smoothstep(tNum, tNum + 0.06, t), 3) }
+        try drawNumberPhase(c, t, inkK)
       }
-      if n != 3 { try drawAnnotations(c, t, wi, inkK) }
-    } else {
-      if n == 3 { try drawTiny(c, t, 3, 1 - smoothstep(tNum, tNum + 0.06, t), 3) }
-      try drawNumberPhase(c, t, inkK)
     }
 
     let echo = n == 4 ? (((wi == 3 && !inNum) ? 0.02 : 0.06) * pulse(t, ws[max(0, wi)], 0.1) + ((inNum && t < tX0) ? 0.025 : 0)) : 0.0
@@ -162,7 +169,6 @@ public final class HookScene: Scene {
       : n == 2 ? 1 + 0.7 * smoothstep(tX0 + 0.02, tX1, t)
       : n == 4 ? 1 + 1.2 * smoothstep(tX0 + 0.03, tX1, t) : 1.0
     let bg = lin(bgK)
-    try hookComp.render(commandQueue: commandQueue, layer: layer, out: out, bgR: bg.r, bgG: bg.g, bgB: bg.b, echo: echo, hot: hot, gain: gain)
 
     if n == 4 && t < ws[0] { o.zoom = 1.08 }
     let hit = pulse(t, tDoom, 0.06)
@@ -175,7 +181,21 @@ public final class HookScene: Scene {
     if shake > 0.05 { o.shake = [noise1(t * 60, 1) * shake, noise1(t * 60, 2) * shake] }
     let still = n == 1 ? ctx.end - 0.1 : tX0
     if t >= still { o.shake = [0, 0]; o.zoom = 1; o.ca = 0.5 }
-    return o
+
+    guard let rawBuf = c.rawPremultipliedRGBA() else { throw EncoderError.failed("hook layer has no backing buffer") }
+    let owned = Profiler.shared.time("owned_copy") { Data(bytes: rawBuf.pointer, count: rawBuf.bytesPerRow * rawBuf.height) }
+    return Prep(bgR: bg.r, bgG: bg.g, bgB: bg.b, echo: echo, hot: hot, gain: gain, overrides: o,
+                raw: (owned, rawBuf.bytesPerRow, rawBuf.width, rawBuf.height))
+  }
+
+  public func render(_ frame: Frame, into out: MTLTexture, commandQueue: MTLCommandQueue) throws -> PostOverrides {
+    let prep = try prepare(frame, scratch: layer)
+    try hookComp.render(commandQueue: commandQueue, prep: prep, out: out)
+    return prep.overrides
+  }
+
+  public func compose(_ prep: Prep, into out: MTLTexture, commandQueue: MTLCommandQueue) throws {
+    try hookComp.render(commandQueue: commandQueue, prep: prep, out: out)
   }
 
   // ------------------------------------------------------------------ words

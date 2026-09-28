@@ -27,6 +27,8 @@ public final class Engine {
   private var rts: [MTLTexture] = []
   private var mixRT: MTLTexture!
   private var xfade: XfadeRenderer
+  private var hudUploader: LayerUploader!
+  public var threads = 1
 
   public init(root: URL, scale: Int, only: Set<String>?) throws {
     self.scale = scale
@@ -43,6 +45,7 @@ public final class Engine {
     timeline = tl
     post = try PostRenderer(device: d, library: library)
     xfade = try XfadeRenderer(device: d, library: library)
+    hudUploader = try LayerUploader(device: d, library: library)
     let pdoom = PDoom(lyrics)
     hud = try Hud(pdoom: pdoom, captions: [], scale: scale, registry: registry) // no timeline entry sets `caption:` today
 
@@ -105,7 +108,7 @@ public final class Engine {
       under = outTex
     }
     if outTex == nil {
-      clearRed(rts[0], commandQueue) // (engine.ts clears to black when nothing is active; red marks a load failure)
+      clearColor(rts[0], commandQueue, 0, 0, 0) // (engine.ts clears to black when nothing is active; red marks a load failure)
       outTex = rts[0]
     }
     return (outTex!, post)
@@ -114,15 +117,54 @@ public final class Engine {
   /// engine.ts's fallback when a scene isn't loaded: a dim red clear (a visible "this scene is missing"
   /// marker), via a render-pass clear (Metal has no direct clear-texture-to-a-colour call).
   private func clearRed(_ tex: MTLTexture, _ commandQueue: MTLCommandQueue) {
+    clearColor(tex, commandQueue, 0.25, 0, 0)
+  }
+
+  private func clearColor(_ tex: MTLTexture, _ commandQueue: MTLCommandQueue, _ r: Double, _ g: Double, _ b: Double) {
     let desc = MTLRenderPassDescriptor()
     desc.colorAttachments[0].texture = tex
     desc.colorAttachments[0].loadAction = .clear
     desc.colorAttachments[0].storeAction = .store
-    desc.colorAttachments[0].clearColor = MTLClearColor(red: 0.25, green: 0, blue: 0, alpha: 1)
+    desc.colorAttachments[0].clearColor = MTLClearColor(red: r, green: g, blue: b, alpha: 1)
     guard let cmd = commandQueue.makeCommandBuffer(), let enc = cmd.makeRenderCommandEncoder(descriptor: desc) else { return }
     enc.endEncoding()
     cmd.commit()
     cmd.waitUntilCompleted()
+  }
+
+  private func fastPathHook(_ t: Double, _ dt: Double, _ shutter: Double) -> (TimelineEntry, HookScene)? {
+    guard threads > 1, timeline.count == 1, let e = timeline.first else { return nil }
+    guard t - dt * shutter * 0.5 >= e.start, t + dt * shutter * 0.5 < e.end else { return nil }
+    guard let scene = try? sceneFor(e), let hook = scene as? HookScene else { return nil }
+    return (e, hook)
+  }
+
+  private func prepareHookBatchParallel(_ hook: HookScene, _ e: TimelineEntry, _ times: [(t: Double, step: Double, seeked: Bool)]) throws -> [HookScene.Prep] {
+    let n = times.count
+    let workerCount = max(1, min(threads, n))
+    var partials = [[(Int, HookScene.Prep)]](repeating: [], count: workerCount)
+    var errors = [Error?](repeating: nil, count: workerCount)
+    let localScale = scale, localRegistry = registry
+    DispatchQueue.concurrentPerform(iterations: workerCount) { w in
+      do {
+        let canvas = try Canvas2D(logicalW: 1920, logicalH: 1080, scale: localScale, registry: localRegistry)
+        var local: [(Int, HookScene.Prep)] = []
+        var idx = w
+        while idx < n {
+          let ti = times[idx]
+          let frame = self.frameFor(e, ti.t, ti.step, ti.seeked, 1, 0)
+          local.append((idx, try hook.prepare(frame, scratch: canvas)))
+          idx += workerCount
+        }
+        partials[w] = local
+      } catch {
+        errors[w] = error
+      }
+    }
+    if let firstError = errors.compactMap({ $0 }).first { throw firstError }
+    var results = [HookScene.Prep?](repeating: nil, count: n)
+    for part in partials { for (idx, prep) in part { results[idx] = prep } }
+    return results.map { $0! }
   }
 
   private lazy var blur: MotionBlurAccumulator? = try? MotionBlurAccumulator(device: device, library: library, pw: 1920 * scale, ph: 1080 * scale, scale: scale)
@@ -154,26 +196,42 @@ public final class Engine {
       guard let blur else { throw EncoderError.failed("motion-blur accumulator unavailable") }
       let POST_U = 0.125
       var nearest = Double.infinity
+      let fast = fastPathHook(t, dt, shutter)
       func sub(_ k: Int, _ u: Double, _ into: MTLTexture, _ step: Double) throws {
         let (hdr, p) = try composite(max(0, t + dt * shutter * u), step, k == 0, commandQueue: q)
-        try blur.addSample(hdr, into: into, q)
+        try Profiler.shared.time("gpu_motionblur_add") { try blur.addSample(hdr, into: into, q) }
         let d = abs(u - POST_U)
         if d < nearest - 1e-9 || (d < nearest + 1e-9 && u > POST_U) { nearest = d; post = p }
+      }
+      func subBatch(_ ks: [Int], _ u: [Double], _ into: MTLTexture, _ step: Double) throws {
+        guard let (e, hook) = fast else {
+          for k in ks { try sub(k, u[k], into, step) }
+          return
+        }
+        let times = ks.map { k in (t: max(0, t + dt * shutter * u[k]), step: step, seeked: k == 0) }
+        let preps = try prepareHookBatchParallel(hook, e, times)
+        for (i, k) in ks.enumerated() {
+          try hook.compose(preps[i], into: rts[0], commandQueue: q)
+          try Profiler.shared.time("gpu_motionblur_add") { try blur.addSample(rts[0], into: into, q) }
+          let d = abs(u[k] - POST_U)
+          if d < nearest - 1e-9 || (d < nearest + 1e-9 && u[k] > POST_U) { nearest = d; post = PostParams().applying(preps[i].overrides) }
+        }
       }
       blur.clear(blur.sumTex, q)
       lastErrors = []
       switch samples {
       case .fixed(let s):
         n = s
-        for k in 0..<n { try sub(k, (Double(k) + 0.5) / Double(n) - 0.5, blur.sumTex, dt / Double(n)) }
+        let u = (0..<n).map { (Double($0) + 0.5) / Double(n) - 0.5 }
+        try subBatch(Array(0..<n), u, blur.sumTex, dt / Double(n))
       case .adaptive(let a):
         let ladder = adaptiveLadder(a, maxAdaptive: a.max)
         let u = ternaryOffsets(ladder.hi)
         n = ladder.nStart
-        for k in 0..<n { try sub(k, u[k], blur.sumTex, dt / Double(n)) }
+        try subBatch(Array(0..<n), u, blur.sumTex, dt / Double(n))
         for _ in ladder.lo..<ladder.hi {
           blur.clear(blur.newTex, q)
-          for k in n..<(3 * n) { try sub(k, u[k], blur.newTex, dt / Double(3 * n)) }
+          try subBatch(Array(n..<(3 * n)), u, blur.newTex, dt / Double(3 * n))
           let err = try blur.sampleError(n: n, q) / 2
           lastErrors.append(err)
           try blur.merge(blur.newTex, into: blur.sumTex, q)
@@ -188,23 +246,12 @@ public final class Engine {
     try hud.draw(t, HudState(opacity: post.hud, frame: post.frame, readout: post.pdoom, paper: post.paper, pdoomOverride: post.pdoomText, corruption: post.hudCorruption))
     let hudTex = try uploadHud()
     try self.post.render(commandQueue: q, src: outHDR, hud: hudTex, out: out, params: post, time: t, flipRows: true)
+    try GPUErrorTracker.shared.checkAndClear()
     return n
   }
 
-  private var hudTexture: MTLTexture?
   private func uploadHud() throws -> MTLTexture {
-    let w = Int((hud.layer.logicalW * Double(hud.layer.scale)).rounded()), h = Int((hud.layer.logicalH * Double(hud.layer.scale)).rounded())
-    if hudTexture == nil || hudTexture!.width != w || hudTexture!.height != h {
-      let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .rgba8Unorm_srgb, width: w, height: h, mipmapped: false)
-      d.usage = [.shaderRead]; d.storageMode = .shared
-      hudTexture = device.makeTexture(descriptor: d)
-    }
-    guard let tex = hudTexture else { throw EncoderError.failed("could not allocate HUD texture") }
-    var rgba = hud.layer.flippedRGBA()
-    rgba.withUnsafeMutableBytes { buf in
-      tex.replace(region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: buf.baseAddress!, bytesPerRow: w * 4)
-    }
-    return tex
+    try hudUploader.upload(commandQueue: commandQueue, layer: hud.layer)
   }
 }
 

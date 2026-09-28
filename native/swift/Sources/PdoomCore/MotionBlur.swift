@@ -59,21 +59,21 @@ final class MotionBlurAccumulator {
     desc.colorAttachments[0].texture = tex; desc.colorAttachments[0].loadAction = .clear
     desc.colorAttachments[0].storeAction = .store; desc.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
     guard let cmd = commandQueue.makeCommandBuffer(), let enc = cmd.makeRenderCommandEncoder(descriptor: desc) else { return }
-    enc.endEncoding(); cmd.commit(); cmd.waitUntilCompleted()
+    enc.endEncoding(); GPUErrorTracker.shared.commitTracked(cmd)
   }
 
   func addSample(_ src: MTLTexture, into sum: MTLTexture, _ commandQueue: MTLCommandQueue) throws {
     guard let cmd = commandQueue.makeCommandBuffer(), let enc = cmd.makeComputeCommandEncoder() else { throw EncoderError.failed("no command encoder") }
     enc.setComputePipelineState(addPipeline); enc.setTexture(src, index: 0); enc.setTexture(sum, index: 1)
     dispatch1(enc, addPipeline, sum.width, sum.height)
-    enc.endEncoding(); cmd.commit(); cmd.waitUntilCompleted()
+    enc.endEncoding(); GPUErrorTracker.shared.commitTracked(cmd)
   }
 
   func merge(_ add: MTLTexture, into sum: MTLTexture, _ commandQueue: MTLCommandQueue) throws {
     guard let cmd = commandQueue.makeCommandBuffer(), let enc = cmd.makeComputeCommandEncoder() else { throw EncoderError.failed("no command encoder") }
     enc.setComputePipelineState(mergePipeline); enc.setTexture(add, index: 0); enc.setTexture(sum, index: 1)
     dispatch1(enc, mergePipeline, sum.width, sum.height)
-    enc.endEncoding(); cmd.commit(); cmd.waitUntilCompleted()
+    enc.endEncoding(); GPUErrorTracker.shared.commitTracked(cmd)
   }
 
   func average(_ sum: MTLTexture, into avg: MTLTexture, k: Double, _ commandQueue: MTLCommandQueue) throws {
@@ -82,7 +82,7 @@ final class MotionBlurAccumulator {
     enc.setComputePipelineState(averagePipeline); enc.setTexture(sum, index: 0); enc.setTexture(avg, index: 1)
     enc.setBytes(&p, length: MemoryLayout<ScaleParams>.stride, index: 0)
     dispatch1(enc, averagePipeline, avg.width, avg.height)
-    enc.endEncoding(); cmd.commit(); cmd.waitUntilCompleted()
+    enc.endEncoding(); GPUErrorTracker.shared.commitTracked(cmd)
   }
 
   /// engine.ts's sampleError(n): how far the displayed average moves when newTex's 2n sub-frames merge

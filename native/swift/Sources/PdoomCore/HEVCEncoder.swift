@@ -89,9 +89,11 @@ public final class HEVCWriter {
 
   /// Renders and appends frame `frame` (0-based); presentation time is frame / fps as an exact rational.
   public func writeFrame(_ frame: Int, render: FrameRenderer) throws {
-    while !input.isReadyForMoreMediaData {
-      if writer.status != .writing { break } // fail fast below instead of spinning forever
-      usleep(500)
+    Profiler.shared.time("encoder_wait") {
+      while !input.isReadyForMoreMediaData {
+        if writer.status != .writing { break } // fail fast below instead of spinning forever
+        usleep(500)
+      }
     }
     guard let pool = adaptor.pixelBufferPool else { throw EncoderError.failed("adaptor has no pixel buffer pool") }
     var pb: CVPixelBuffer?
@@ -111,7 +113,8 @@ public final class HEVCWriter {
       throw EncoderError.failed("AVAssetWriter not writing (status \(writer.status.rawValue)): \(writer.error?.localizedDescription ?? "unknown")")
     }
     let pts = CMTime(value: CMTimeValue(frame), timescale: CMTimeScale(fps))
-    guard adaptor.append(pixelBuffer, withPresentationTime: pts) else {
+    let appended = Profiler.shared.time("encoder_append") { adaptor.append(pixelBuffer, withPresentationTime: pts) }
+    guard appended else {
       throw EncoderError.failed("adaptor append failed for frame \(frame): \(writer.error?.localizedDescription ?? "unknown")")
     }
   }
