@@ -89,10 +89,11 @@ try {
     const name = `t${t.toFixed(3).padStart(7, '0')}`;
     await Bun.write(path.join(OUT, `${name}.hdr.f16`), Buffer.from(r.hdr, 'base64'));
     await Bun.write(path.join(OUT, `${name}.hud.f16`), Buffer.from(r.hud, 'base64'));
-    // final: bottom-up RGBA8 from WebGL -> top-down PNG
+    // final: bottom-up RGBA8 from WebGL -> top-down PNG. ffmpeg logs "Truncating packet of size N to 524288"
+    // here and reads the whole frame anyway: Bun's stdin pipe is a socket, whose size on macOS is the bytes
+    // buffered so far, and ffmpeg drops that bogus size after the first short read.
     const png = Bun.spawn(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${r.w}x${r.h}`, '-i', '-', '-vf', 'vflip', path.join(OUT, `${name}.final.png`)], { stdin: 'pipe' });
     png.stdin.write(Buffer.from(r.final, 'base64'));
-    await png.stdin.flush(); // (end() alone can close the pipe before a large write is through)
     await png.stdin.end();
     if ((await png.exited) !== 0) throw new Error(`ffmpeg failed writing ${name}.final.png`);
     await Bun.write(path.join(OUT, `${name}.json`), JSON.stringify({ t, width: r.w, height: r.h, scale: SCALE, samples: r.samples, post: r.post }, null, 1));

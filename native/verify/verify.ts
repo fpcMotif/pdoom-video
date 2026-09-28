@@ -93,7 +93,6 @@ async function writePng(file: string, w: number, h: number, rgb: Uint8Array) {
   mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
   const p = Bun.spawn(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', `${w}x${h}`, '-i', '-', file], { stdin: 'pipe', stderr: 'pipe' });
   p.stdin.write(rgb);
-  await p.stdin.flush(); // (end() alone can close the pipe before a large write is through)
   await p.stdin.end();
   if ((await p.exited) !== 0) throw new Error(`ffmpeg could not write ${file}: ${await new Response(p.stderr).text()}`);
 }
