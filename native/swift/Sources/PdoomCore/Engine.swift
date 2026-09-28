@@ -208,13 +208,20 @@ public final class Engine {
           for k in ks { try sub(k, u[k], into, step) }
           return
         }
-        let times = ks.map { k in (t: max(0, t + dt * shutter * u[k]), step: step, seeked: k == 0) }
-        let preps = try prepareHookBatchParallel(hook, e, times)
-        for (i, k) in ks.enumerated() {
-          try hook.compose(preps[i], into: rts[0], commandQueue: q)
-          try Profiler.shared.time("gpu_motionblur_add") { try blur.addSample(rts[0], into: into, q) }
-          let d = abs(u[k] - POST_U)
-          if d < nearest - 1e-9 || (d < nearest + 1e-9 && u[k] > POST_U) { nearest = d; post = PostParams().applying(preps[i].overrides) }
+        let windowSize = max(1, threads * 2)
+        var start = 0
+        while start < ks.count {
+          let end = min(start + windowSize, ks.count)
+          let windowKs = Array(ks[start..<end])
+          let times = windowKs.map { k in (t: max(0, t + dt * shutter * u[k]), step: step, seeked: k == 0) }
+          let preps = try prepareHookBatchParallel(hook, e, times)
+          for (i, k) in windowKs.enumerated() {
+            try hook.compose(preps[i], into: rts[0], commandQueue: q)
+            try Profiler.shared.time("gpu_motionblur_add") { try blur.addSample(rts[0], into: into, q) }
+            let d = abs(u[k] - POST_U)
+            if d < nearest - 1e-9 || (d < nearest + 1e-9 && u[k] > POST_U) { nearest = d; post = PostParams().applying(preps[i].overrides) }
+          }
+          start = end
         }
       }
       blur.clear(blur.sumTex, q)
