@@ -19,11 +19,10 @@ func runDiagnostic(args: Args, root: URL) async throws {
 
   switch encoderName {
   case "hevc":
-    guard #available(macOS 26.0, *) else { throw EncoderError.failed("HEVC path needs macOS 26+ (AVAssetWriter.inputPixelBufferReceiver)") }
     let writer = try HEVCWriter(out: out, width: w, height: h, fps: fps, bitrate: 150_000_000, device: device)
     do {
       for f in 0..<frames {
-        try await writer.writeFrame(f) { texture, frame, queue in try diag.render(into: texture, frame: frame, commandQueue: queue) }
+        try writer.writeFrame(f) { texture, frame, queue in try diag.render(into: texture, frame: frame, commandQueue: queue) }
       }
       try await writer.finish()
     } catch {

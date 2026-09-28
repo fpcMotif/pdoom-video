@@ -37,11 +37,3 @@ func requireOpt(_ args: Args, _ key: String) throws -> String {
   guard let v = args.opt(key) else { throw EncoderError.failed("--\(key) is required") }
   return v
 }
-
-// -------------------------------------------------------------------------------------------- stubs (M3)
-func runStills(args: Args, root: URL) async throws {
-  throw EncoderError.failed("stills: not implemented yet (M3)")
-}
-func runVideo(args: Args, root: URL) async throws {
-  throw EncoderError.failed("video: not implemented yet (M3)")
-}
