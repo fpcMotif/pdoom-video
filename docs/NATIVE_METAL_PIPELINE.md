@@ -28,6 +28,22 @@ A headless command-line renderer with:
 6. **Scenes**: one port per plate in `app/src/scenes/`, starting with `hook` (four timeline entries, typography-heavy, no meshes).
 7. **Output**: HEVC through AVFoundation from IOSurface-backed pixel buffers (hardware encoder required), or x264 through ffmpeg with the browser path's settings (`-c:v libx264 -preset slow -crf 16 -tune grain -x264-params aq-mode=3 -pix_fmt yuv420p`), plus the song's audio.
 
+## Porting order
+
+Every scene draws text on a Canvas2D layer, and nearly every shader needs screen derivatives (`fwidth`), so the 2D layer and fragment passes come first. No scene is stateful or handles its own transition, and the timeline entries touch without overlapping, so the engine's crossfade never runs. The scenes are grouped by what they need beyond that core:
+
+| Order | Scenes | What they add |
+|---|---|---|
+| 0 | engine | Canvas2D equivalent (text with letter spacing, stroke text, clip incl. even-odd, dashes, gradients, shadow blur, `lighter`/`difference`/`destination-out`), font layout, `LineBatch`, Compositor `normal`/`replace`/`add`, post, HUD |
+| 1 | hook, prompt, dense | text-heavy 2D with one or two fullscreen shaders; dense adds a mask built from `getImageData` |
+| 2 | open, room, fuse | 2D line art (100k–340k `LineBatch` segments), stroke fonts, glyph outlines, sparks; fuse adds a ribbon mesh and a half-resolution glow layer |
+| 3 | bureau, leftturn, ascent | large canvases (up to 4096²) sampled through camera shaders, channel-coded layers, intermediate render targets, multi-tap motion blur |
+| 4 | loss, stack, spacetime | three.js cameras with depth: a vertex-displaced plane, instanced boxes with fog, 3D lines depth-tested against meshes, a mipmapped canvas sampled with derivatives |
+| 5 | paperclips, shoggoth, ilya | fullscreen ray marching (128–160 steps), supersample-tap cycling; shoggoth adds a two-target float G-buffer |
+| 6 | loom, outro | built from other scenes: loom renders the ilya room, outro plays open backwards over the plate JPEGs |
+
+Shared shaders on `native-base`: engine (`common`, `post`, `engine`, `diagnostic`, `lines`) and scenes hook, prompt and dense. All compile at scales 1 and 2; each is verified only when a port renders it against Chrome.
+
 ## Conventions every port follows
 
 - **Orientation**: textures keep WebGL's row order (row 0 = image bottom), so `position.y`/`gid.y` equal WebGL's `gl_FragCoord.y − 0.5` and hashes of pixel coordinates match. Vertex shaders negate clip-space y. Only the final pass (`post_final` with `flipRows = 1`) or the diagnostic pattern writes top-down rows for the encoder.
