@@ -24,6 +24,7 @@ The concept, style bible and plate-by-plate treatment are in [`docs/TREATMENT.md
   - `src/scenes/` — one module per plate (`open`, `loss`, `prompt`, `hook`, `room`, `shoggoth`, `spacetime`, `ascent`, `bureau`, `leftturn`, `paperclips`, `fuse`, `stack`, `dense`, `loom`, `ilya`, `outro`) plus shared motifs.
   - `src/timeline.ts` — the edit: scene windows anchored to lyric lines and snapped to the beat grid.
   - `scripts/render.ts` — offline renderer (headless Chrome → raw frames over WebSocket → ffmpeg).
+- `native/` — the native Metal renderer in progress (shared shaders and checks; the Rust and Swift ports live on the `native-rust` and `native-swift` branches). See [`docs/NATIVE_METAL_PIPELINE.md`](docs/NATIVE_METAL_PIPELINE.md).
 - `out/` — renders (not in the repo).
 
 ## Requirements
