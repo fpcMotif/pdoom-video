@@ -16,6 +16,11 @@
 //   textureGrad(s, uv, dx, dy) -> s.sample(lin, uv, gradient2d(dx, dy))
 //   gl_FragCoord.xy -> in.position.xy   FRAG_PX -> FRAG_PX(in.position)
 //   smoothstep with edge0 > edge1 -> sstep (MSL leaves reversed edges undefined)
+//   pow stays pow: Chrome's ANGLE emits Metal's pow, so negative bases agree (measured on this GPU:
+//   pow(-2, 2) = 4, pow(-2, 3) = -8, pow(-2, 1.2) = NaN in WebGL and in Metal, safe or fast math)
+// Chrome's shader compiler rounds differently in places (measured: smoothstep differs by up to 2.4e-7,
+// 1-2 ulp, on 56-103 of 256 inputs, the same against Metal's built-in and sstep), so ports match Chrome
+// to about +-2 output levels, not bit for bit.
 //   fwidth/dFdx/dFdy exist only in fragment functions: pxLine, rampLine, aaFill, aaStroke, hatch
 //   and engrave must not be called from kernels.
 #include <metal_stdlib>
