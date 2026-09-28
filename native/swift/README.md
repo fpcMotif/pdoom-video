@@ -13,16 +13,24 @@ swift build -c release --package-path native/swift
 Requires macOS 26+, Swift 6.4+/Xcode. Shaders under `native/shaders/` are compiled at process start
 with `MTLDevice.makeLibrary(source:)` (no offline `.metal` compiler is used or required).
 
+The package is a `PdoomCore` library (data layer, shader compilation, encoders, post chain — everything
+reusable and unit-testable) plus a thin `pdoom-native` executable (CLI parsing and dispatch only).
+
+```sh
+swift test --package-path native/swift    # PdoomCoreTests: data layer vs reference.json (see M2 below)
+```
+
 ## Run
 
 ```sh
 BIN=native/swift/.build/out/Products/Release/pdoom-native   # swift build --show-bin-path prints the exact path
 $BIN diagnostic --frames 120 --fps 60 --scale 1 --encoder x264 --out out.mp4
 $BIN diagnostic --frames 120 --fps 60 --scale 1 --encoder hevc --out out.mp4
+$BIN post-fixture --fixtures out/native-ref/post-1x --out out/native-swift/post-1x
 ```
 
-`post-fixture`, `stills` and `video` are accepted on the command line (same shape as the brief/CLI) but
-are not implemented yet — see Known gaps.
+`stills` and `video` are accepted on the command line (same shape as the brief/CLI) but are not
+implemented yet — see Known gaps.
 
 ## What works (M1: output path)
 
@@ -92,11 +100,68 @@ These are `diag_pattern`-only (no engine/post/scene work), so they measure the o
 frame's GPU cost; x264's wall time includes libx264's own encode cost (`-preset slow`), which is why it is
 slower than HEVC hardware encode per frame at 1080p despite HEVC's async pipeline having more moving parts.
 
+## What works (M2: data layer and post chain)
+
+- **Data layer**: `PdoomCore/AudioData.swift`, `Lyrics.swift`, `Smart.swift`, `Timeline.swift` are
+  line-for-line ports of `app/src/engine/audio.ts`, `lyrics.ts`, `type.ts`'s `smart()`, and
+  `app/src/timeline.ts`. Envelopes are stored as `Float` (matching the TS `Float32Array`s) but every
+  lookup computes in `Double`, matching JS's numbers.
+- **Post chain**: `PdoomCore/PostRenderer.swift` dispatches `native/shaders/post.metal`'s
+  `post_prefilter` / `post_down` / `post_up` / `post_final` in the sequence documented in that file's
+  header (bloom pyramid at fixed logical resolution regardless of output scale, then the final
+  composite: CA, bloom, halation, HUD blend, tone shoulder, invert, flash, vignette, fade, sRGB encode,
+  grain, dither). `PostParams` mirrors `post.ts`'s `PostParams`/`DEFAULT_POST`.
+- **`post-fixture`**: loads a fixture's `.hdr.f16`/`.hud.f16` (raw RGBA16Float, row 0 = bottom) and
+  `.json` (`PostParams` + time), runs the chain, and writes `<name>.final.png` (top-down, `flipRows: 1`).
+
+### Verified commands and results
+
+```
+swift test --package-path native/swift
+  → dataLayerMatchesReference(): PASS — every one of reference.ts's 22 timeline entries (start/end/
+    params/maxSamples), both lyrics counts, 40 timeOfBeat samples, and beatAt/barAt/sample()/env()/
+    lineAt/wordAt at all 3198 of its sample times, within 1e-9. (lyrics text separately spot-checked:
+    all 46 smart()-quoted lines byte-identical to the TS engine's own output.)
+
+$BIN post-fixture --fixtures out/native-ref/post-1x --out out/native-swift/post-1x   (11 frames, 1080p)
+$BIN post-fixture --fixtures out/native-ref/post-2x --out out/native-swift/post-2x   (2 frames, 4K)
+bun native/verify/verify.ts compare <ref>.final.png <ours>.final.png --tol 2 --diff d.png --side s.png
+```
+
+| fixture (1x) | max | mean | PSNR |
+|---|---|---|---|
+| t004.664 | 3 | 0.000 | 85.3 dB |
+| t016.150 | 2 | 0.000 | 81.8 dB |
+| t022.450 | 1 | 0.000 | 88.6 dB |
+| t025.650 | 2 | 0.000 | 86.2 dB |
+| t027.055 | 1 | 0.001 | 79.8 dB |
+| t059.553 | 2 | 0.000 | 94.3 dB |
+| t081.150 | 1 | 0.000 | 96.0 dB |
+| t095.915 | 3 | 0.000 | 96.2 dB |
+| t119.777 | 3 | 0.001 | 80.3 dB |
+| t140.500 | 2 | 0.001 | 79.5 dB |
+| t148.440 | 1 | 0.000 | 98.2 dB |
+| 2x t022.450 | 1 | 0.000 | 86.5 dB |
+| 2x t081.150 | 1 | 0.000 | 94.9 dB |
+
+Target from the brief is max ≤ 2 levels; 3 of the 11 1080p fixtures reach max 3 (one level over). I
+looked at the actual pixels (not just the stat) before accepting this: `t004.664` has 18 pixels total
+(out of 2,073,600) at ±2 or ±3, e.g. `(648,470)` ref `[139,59,39]` vs ours `[141,59,39]` — single-channel,
+scattered across bloom highlights and HUD-panel edges, mean abs error 0.000-0.001, PSNR 79.5-98.2 dB. This
+is the signature of float32 rounding-boundary disagreement between Chrome/ANGLE-Metal's GLSL compiler and
+Metal's native compiler evaluating the same grain/dither hash expression, not a structural or algorithmic
+difference (a side-by-side of `t081.150` — bloom glow, HUD table text, grid lines — is visually identical).
+I did not loosen the target or touch the shared shader for this; both `post-2x` (4K) fixtures are within
+target (max 1), which is consistent with a last-bit rounding effect rather than a bug that scale would
+also expose.
+
 ## Known gaps
 
-- **M2** (data/timeline/engine/post/motion blur/HUD) and **M3** (`hook` scene, CoreText 2D layers) are not
-  implemented: `post-fixture`, `stills` and `video` exit with a clear "not implemented yet" error rather
-  than silently producing wrong output.
+- **Engine core** (composite + crossfade, motion blur — fixed and adaptive — HUD-as-texture) is not
+  implemented; there are no scenes to composite yet. `post-fixture` covers the post chain in isolation
+  (its acceptance test), but the full `Engine.render` loop is M3/M4 work.
+- **M3** (`hook` scene, CoreText 2D layers) is not implemented: `stills` and `video` exit with a clear
+  "not implemented yet" error rather than silently producing wrong output.
 - **M4** (multi-threaded pipeline) is not implemented — there is no scene/engine code yet to parallelize.
   `FrameRenderer` (the per-frame GPU callback) is already the seam M4 will parallelize CPU prep behind:
   it is a plain closure `(MTLTexture, Int, MTLCommandQueue) throws -> Void` with no shared mutable state

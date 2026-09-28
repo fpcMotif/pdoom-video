@@ -2,16 +2,16 @@
 // from the current directory, or from an explicit --root.
 import Foundation
 
-enum RootError: Error, CustomStringConvertible {
+public enum RootError: Error, CustomStringConvertible {
   case notFound(String)
-  var description: String {
+  public var description: String {
     switch self {
     case .notFound(let cwd): return "could not find repo root (looked for native/shaders above \(cwd)); pass --root"
     }
   }
 }
 
-func findRepoRoot(explicit: String?) throws -> URL {
+public func findRepoRoot(explicit: String?) throws -> URL {
   if let explicit {
     return URL(fileURLWithPath: explicit, isDirectory: true).standardizedFileURL
   }

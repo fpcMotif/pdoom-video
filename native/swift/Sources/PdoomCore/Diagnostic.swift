@@ -4,10 +4,10 @@ import Metal
 
 struct DiagParams { var frame: Float }
 
-final class DiagnosticRenderer {
+public final class DiagnosticRenderer {
   private let pipeline: MTLComputePipelineState
 
-  init(device: MTLDevice, library: MTLLibrary) throws {
+  public init(device: MTLDevice, library: MTLLibrary) throws {
     guard let fn = library.makeFunction(name: "diag_pattern") else {
       throw EncoderError.failed("diag_pattern function missing from shader library")
     }
@@ -16,7 +16,7 @@ final class DiagnosticRenderer {
 
   /// Encodes and commits a compute pass writing the diagnostic pattern for `frame` into `texture`, then
   /// blocks until the GPU finishes (M1's simple, verifiably-correct baseline; M4 pipelines this).
-  func render(into texture: MTLTexture, frame: Int, commandQueue: MTLCommandQueue) throws {
+  public func render(into texture: MTLTexture, frame: Int, commandQueue: MTLCommandQueue) throws {
     guard let cmd = commandQueue.makeCommandBuffer(), let enc = cmd.makeComputeCommandEncoder() else {
       throw EncoderError.failed("could not make Metal command buffer/encoder")
     }

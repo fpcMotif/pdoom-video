@@ -4,15 +4,15 @@
 import Foundation
 import Metal
 
-final class X264Writer {
+public final class X264Writer {
   private let process: Process
   private let stdin: FileHandle
   private let width: Int
   private let height: Int
   private var scratch: [UInt8]
 
-  init(out: URL, width: Int, height: Int, fps: Int, crf: String, preset: String, x264Params: String,
-       audioFrom: Double?, audioTo: Double?, audioFile: URL?, noAudio: Bool) throws {
+  public init(out: URL, width: Int, height: Int, fps: Int, crf: String, preset: String, x264Params: String,
+              audioFrom: Double?, audioTo: Double?, audioFile: URL?, noAudio: Bool) throws {
     self.width = width; self.height = height
     self.scratch = [UInt8](repeating: 0, count: width * height * 4)
     try FileManager.default.createDirectory(at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -42,7 +42,7 @@ final class X264Writer {
 
   /// Renders frame `frame` into a scratch Metal texture, waits for the GPU, reads back tightly-packed
   /// BGRA (ignoring any internal bytesPerRow padding Metal chose for the texture), and pipes it to ffmpeg.
-  func writeFrame(_ frame: Int, render: FrameRenderer, texture: MTLTexture, commandQueue: MTLCommandQueue) throws {
+  public func writeFrame(_ frame: Int, render: FrameRenderer, texture: MTLTexture, commandQueue: MTLCommandQueue) throws {
     try render(texture, frame, commandQueue)
     let bytesPerRow = width * 4
     scratch.withUnsafeMutableBytes { buf in
@@ -56,7 +56,7 @@ final class X264Writer {
   }
 
   /// Closes the pipe and waits for ffmpeg to exit; throws (nonzero exit, no partial file) on failure.
-  func finish(out: URL) throws {
+  public func finish(out: URL) throws {
     try stdin.close()
     process.waitUntilExit()
     if process.terminationStatus != 0 {
@@ -66,7 +66,7 @@ final class X264Writer {
   }
 
   /// Forced-failure path: kill ffmpeg and remove any partial output.
-  func cancel(out: URL) {
+  public func cancel(out: URL) {
     process.terminate()
     process.waitUntilExit()
     try? FileManager.default.removeItem(at: out)

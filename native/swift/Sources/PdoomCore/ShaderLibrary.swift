@@ -5,14 +5,14 @@
 import Foundation
 import Metal
 
-enum ShaderError: Error, CustomStringConvertible {
+public enum ShaderError: Error, CustomStringConvertible {
   case compile(String)
-  var description: String {
+  public var description: String {
     switch self { case .compile(let s): return s }
   }
 }
 
-func loadShaderSource(dir: URL) throws -> String {
+public func loadShaderSource(dir: URL) throws -> String {
   let fm = FileManager.default
   guard let en = fm.enumerator(at: dir, includingPropertiesForKeys: nil) else {
     throw ShaderError.compile("cannot list shader directory \(dir.path)")
@@ -35,7 +35,7 @@ func loadShaderSource(dir: URL) throws -> String {
   return source
 }
 
-func makeShaderLibrary(device: MTLDevice, shaderDir: URL, scale: Int) throws -> MTLLibrary {
+public func makeShaderLibrary(device: MTLDevice, shaderDir: URL, scale: Int) throws -> MTLLibrary {
   let source = try loadShaderSource(dir: shaderDir)
   let options = MTLCompileOptions()
   options.mathMode = .safe

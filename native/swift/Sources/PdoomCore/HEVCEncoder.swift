@@ -10,17 +10,17 @@ import Metal
 import VideoToolbox
 import Foundation
 
-enum EncoderError: Error, CustomStringConvertible {
+public enum EncoderError: Error, CustomStringConvertible {
   case failed(String)
-  var description: String { if case .failed(let s) = self { return s }; return "encoder error" }
+  public var description: String { if case .failed(let s) = self { return s }; return "encoder error" }
 }
 
 /// Renders one frame (index `frame`, `w` x `h` physical px) into `texture` (bgra8Unorm, write access).
 /// Called on the GPU-submission thread; the command buffer must be committed and complete before return.
-typealias FrameRenderer = (_ texture: MTLTexture, _ frame: Int, _ commandQueue: MTLCommandQueue) throws -> Void
+public typealias FrameRenderer = (_ texture: MTLTexture, _ frame: Int, _ commandQueue: MTLCommandQueue) throws -> Void
 
 @available(macOS 26.0, *)
-final class HEVCWriter {
+public final class HEVCWriter {
   private let writer: AVAssetWriter
   private let input: AVAssetWriterInput
   private let receiver: AVAssetWriterInput.PixelBufferReceiver
@@ -32,7 +32,7 @@ final class HEVCWriter {
   private let height: Int
   private let fps: Int
 
-  init(out: URL, width: Int, height: Int, fps: Int, bitrate: Int, device: MTLDevice) throws {
+  public init(out: URL, width: Int, height: Int, fps: Int, bitrate: Int, device: MTLDevice) throws {
     self.width = width; self.height = height; self.fps = fps
     self.device = device
     guard let q = device.makeCommandQueue() else { throw EncoderError.failed("could not make Metal command queue") }
@@ -80,7 +80,7 @@ final class HEVCWriter {
   }
 
   /// Renders and appends frame `frame` (0-based); presentation time is frame / fps as an exact rational.
-  func writeFrame(_ frame: Int, render: FrameRenderer) async throws {
+  public func writeFrame(_ frame: Int, render: FrameRenderer) async throws {
     let buffer = try pool.makeMutablePixelBuffer()
     try buffer.withUnsafeBuffer { legacyPB throws in
       var cvTexture: CVMetalTexture?
@@ -97,7 +97,7 @@ final class HEVCWriter {
     try await receiver.append(readOnly, with: pts)
   }
 
-  func finish() async throws {
+  public func finish() async throws {
     receiver.finish()
     input.markAsFinished()
     await writer.finishWriting()
@@ -108,7 +108,7 @@ final class HEVCWriter {
   }
 
   /// Aborts the writer and removes any partial output file (a forced-failure path must leave nothing behind).
-  func cancel(out: URL) {
+  public func cancel(out: URL) {
     writer.cancelWriting()
     try? FileManager.default.removeItem(at: out)
   }
