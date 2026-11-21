@@ -24,6 +24,7 @@ The concept, style bible and plate-by-plate treatment are in [`docs/TREATMENT.md
   - `src/scenes/` — one module per plate (`open`, `loss`, `prompt`, `hook`, `room`, `shoggoth`, `spacetime`, `ascent`, `bureau`, `leftturn`, `paperclips`, `fuse`, `stack`, `dense`, `loom`, `ilya`, `outro`) plus shared motifs.
   - `src/timeline.ts` — the edit: scene windows anchored to lyric lines and snapped to the beat grid.
   - `scripts/render.ts` — offline renderer (headless Chrome → raw frames over WebSocket → ffmpeg).
+- `native/` — the native Metal renderer in progress (shared shaders and checks; the Rust and Swift ports live on the `native-rust` and `native-swift` branches). See [`docs/NATIVE_METAL_PIPELINE.md`](docs/NATIVE_METAL_PIPELINE.md).
 - `out/` — renders (not in the repo).
 
 ## Requirements
@@ -60,6 +61,7 @@ bun scripts/render.ts video --samples auto --shutter 0.2 --out ../out/pdoom.mp4
 
 - **Output:** 1920×1080 at 60 fps, x264 CRF 16, AAC audio.
 - **Motion blur:** every frame is the average of many sub-frames spread over a short shutter (`--shutter 0.2`, a fifth of the frame time), so fast motion leaves a continuous streak instead of a few stepped copies. `--samples auto` picks the count per frame: 12 for a still frame, 36 for ordinary camera motion, 108 or 324 for whips, slams and fast zooms. It stops once more sub-frames would no longer change the image by more than `--tol` levels of 255 (default 3). `--samples N` takes a fixed N instead (`--samples 4` makes a quick draft). How it works: "Motion blur and sampling" in [`docs/ENGINE.md`](docs/ENGINE.md).
+- **Hardware encoding:** `--apple` encodes with VideoToolbox HEVC (`hevc_videotoolbox`, 150 Mbit/s, `--bitrate` to change it) instead of x264; add `--h264` for `h264_videotoolbox`. It is much faster to encode but not the x264 CRF 16 master.
 - **Other modes:** `stills`, `sheet` (contact sheets, `--cuts` for every scene boundary), `perf`, and `plates` (regenerates `public/plates/`, the stills used by the outro's rewind montage; rerun it after changing a scene).
 
 ### 4K

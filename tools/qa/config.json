@@ -1,0 +1,20 @@
+{
+  "project": "pdoom-video.native-swift",
+  "surface": "render",
+  "choice": "Native frame/pixel verification; browser screenshots are not a rendering oracle",
+  "commands": {
+    "smoke": {
+      "argv": ["bun", "native/verify/verify.ts", "selftest"]
+    },
+    "verify": {
+      "argv": ["bun", "native/verify/verify.ts"],
+      "scoped": true
+    },
+    "doctor": {
+      "argv": ["ffmpeg", "-version"]
+    },
+    "harness:check": {
+      "argv": ["bun", "--no-env-file", "tools/qa/self-check.mjs"]
+    }
+  }
+}
