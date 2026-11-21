@@ -5,6 +5,11 @@ node_modules/
 # renders
 out/
 
+# native renderer builds (Cargo's target/ is a symlink into the mbx cache)
+target
+.build/
+.swiftpm/
+
 # analysis: Python env, model weights, stems and intermediates (regenerable, large)
 analysis/.venv/
 analysis/.cache/
